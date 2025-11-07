@@ -6,7 +6,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sbabiv/xml2map"
 )
@@ -20,13 +23,74 @@ import (
 // }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "" || r.Method == "GET" {
-		fmt.Fprint(w, "hello")
+	/*
+		if r.Method == "" || r.Method == "GET" {
+			fmt.Fprint(w, "hello")
+			return
+		}
+	*/
+
+	posts, err := parsePosts("wp_blog_2025-10-09.xml")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	slug := r.URL.EscapedPath()
+	if slug == "/favicon.ico" {
+		// TODO
 		return
 	}
 
-	fmt.Fprintf(w, "meow!")
+	if slug == "/" || slug == "" {
+		fmt.Fprintf(w, "<head>")
+		fmt.Fprint(w, "</head>")
+		fmt.Fprint(w, "<body>")
+		fmt.Fprintf(w, "<ul>")
+		for _, post := range posts {
+			fmt.Fprint(w, "<li>")
+			fmt.Fprintf(w, "<a href=\"/%s\">", strconv.Itoa(post.id))
+			fmt.Fprint(w, post.title)
+			fmt.Fprint(w, "</a>")
+			fmt.Fprint(w, "</li>")
+		}
+		fmt.Fprintf(w, "</ul>")
+		fmt.Fprint(w, "</body>")
+		return
+	}
 
+	id, err := strconv.Atoi(slug[1:])
+	if err != nil {
+		fmt.Print(err)
+		fmt.Fprint(w, "unexpected url")
+		return
+	}
+
+	idx := slices.IndexFunc(posts, func(a Page) bool {
+		return a.id == id
+	})
+
+	if idx < 0 {
+		fmt.Fprint(w, "unexpected url")
+		return
+	}
+
+	post := posts[idx]
+	fmt.Println("displaying ", post.title)
+
+	fmt.Fprint(w, "<head>")
+	fmt.Fprint(w, "<title>")
+	fmt.Fprint(w, post.title)
+	fmt.Fprint(w, "</title>")
+	fmt.Fprint(w, "</head>")
+
+	fmt.Fprint(w, "<body>")
+	fmt.Fprint(w, "<h1>")
+	fmt.Fprint(w, post.title)
+	fmt.Fprint(w, "</h1>")
+	fmt.Fprint(w, "<p>")
+	fmt.Fprint(w, post.content)
+	fmt.Fprint(w, "</p>")
+	fmt.Fprint(w, "</body>")
 }
 
 func parseItems(xml_data string) ([]map[string]interface{}, error) {
@@ -57,23 +121,14 @@ func parseItems(xml_data string) ([]map[string]interface{}, error) {
 }
 
 func parsePosts(file_path string) ([]Page, error) {
-
-}
-
-type Page struct {
-	title   string
-	content string
-}
-
-func main() {
-	data, err := os.ReadFile("wp_blog_2025-10-09.xml")
+	data, err := os.ReadFile(file_path)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	results, err := parseItems(string(data))
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	contents := make([]Page, 0, len(results))
@@ -85,22 +140,52 @@ func main() {
 
 		content := item["content:encoded"].(string)
 		title := item["title"].(string)
+
+		post_date := item["1.2:post_date"].(string)
+		date, err := time.Parse(time.DateTime, post_date)
+		if err != nil {
+			return contents, err
+		}
+
+		wp_id := item["1.2:post_id"].(string)
+		id, err := strconv.Atoi(wp_id)
+		if err != nil {
+			return contents, err
+		}
+
 		page := Page{
-			title:   title,
-			content: content,
+			title:     title,
+			content:   content,
+			timestamp: date,
+			id:        id,
 		}
 
 		contents = append(contents, page)
-
 	}
 
-	for _, page := range contents {
-		fmt.Println(page.title)
-		fmt.Println(page.content)
-	}
+	return contents, nil
+}
+
+type Page struct {
+	title     string
+	content   string
+	timestamp time.Time
+	id        int
+}
+
+func main() {
+
+	// posts, err := parsePosts("wp_blog_2025-10-09.xml")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// for _, page := range posts {
+	// 	fmt.Println(page.title)
+	// 	fmt.Println(page.content)
+	// }
 
 	// fmt.Println(contents[1].title)
-	return
+	// return
 	// result := results[1]["content:encoded"].(string)
 	// fmt.Println(result)
 	// fmt.Println("end")
@@ -142,7 +227,7 @@ func main() {
 
 	http.HandleFunc("/", handler)
 
-	err = http.ListenAndServe("localhost:10000", nil)
+	err := http.ListenAndServe("localhost:10000", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
