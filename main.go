@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +21,79 @@ import (
 // 	Item string
 // }
 
+var pages *Pages
+
+func forceRead(path string) string {
+	file, err := os.ReadFile(path)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return string(file)
+}
+
+func loadPages() {
+	pages = new(Pages)
+	pages.index = forceRead("html/index.html")
+	pages.not_found = forceRead("html/404.html")
+	pages.posts = make(map[int]string, 0)
+	folder := "./.tmp"
+	dirs, err := os.ReadDir(folder)
+	if err != nil {
+		log.Fatal("error:", err)
+	}
+
+	for _, dir := range dirs {
+		fileName := dir.Name()
+		fullName := folder + "/" + dir.Name()
+		id, err := strconv.Atoi(fileName[0 : len(fileName)-5])
+		if err != nil {
+			log.Panic(err)
+		}
+
+		pages.posts[id] = forceRead(fullName)
+
+	}
+
+}
+
+func writeLegacyPosts(legacyPosts []Post, outFolder string, template string) error {
+	// template_parts := strings.Split(template, "{{post}}")
+	// if len(template_parts) != 2 {
+	// 	return errors.New("bad template, expected {{post}} got " + strconv.Itoa(len(template_parts)) + "parts")
+	// }
+
+	for _, legacypost := range legacyPosts {
+		file_path := outFolder + "/" + strconv.Itoa(legacypost.id) + ".html"
+		f, err := os.Create(file_path)
+		if err != nil {
+			return err
+		}
+
+		// fmt.Fprint(f, "<head>")
+		// fmt.Fprint(f, "<title>")
+		// fmt.Fprint(f, legacypost.title)
+		// fmt.Fprint(f, "</title>")
+		// fmt.Fprint(f, "</head>")
+
+		// fmt.Fprint(f, template_parts[0])
+		// fmt.Fprint(f, "<body>")
+		templaten := strings.ReplaceAll(template, "{{title}}", legacypost.title)
+		templaten = strings.ReplaceAll(templaten, "{{post}}", legacypost.content)
+		fmt.Fprint(f, templaten)
+		// fmt.Fprint(f, "<h1>")
+		// fmt.Fprint(f, legacypost.title)
+		// fmt.Fprint(f, "</h1>")
+		// fmt.Fprint(f, "<p>")
+		// fmt.Fprint(f, legacypost.content)
+		// fmt.Fprint(f, "</p>")
+		// fmt.Fprint(f, template_parts[1])
+		// fmt.Fprint(f, "</body>")
+	}
+
+	return nil
+}
+
 func handler(w http.ResponseWriter, r *http.Request) {
 	/*
 		if r.Method == "" || r.Method == "GET" {
@@ -30,10 +102,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		}
 	*/
 
-	posts, err := parsePosts("wp_blog_2025-10-09.xml")
-	if err != nil {
-		log.Fatal(err)
-	}
+	// posts, err := parsePosts("wp_blog_2025-10-09.xml")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	slug := r.URL.EscapedPath()
 	if slug == "/favicon.ico" {
@@ -42,19 +114,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if slug == "/" || slug == "" {
-		fmt.Fprintf(w, "<head>")
-		fmt.Fprint(w, "</head>")
-		fmt.Fprint(w, "<body>")
-		fmt.Fprintf(w, "<ul>")
-		for _, post := range posts {
-			fmt.Fprint(w, "<li>")
-			fmt.Fprintf(w, "<a href=\"/%s\">", strconv.Itoa(post.id))
-			fmt.Fprint(w, post.title)
-			fmt.Fprint(w, "</a>")
-			fmt.Fprint(w, "</li>")
-		}
-		fmt.Fprintf(w, "</ul>")
-		fmt.Fprint(w, "</body>")
+		// index
+		fmt.Fprint(w, pages.index)
 		return
 	}
 
@@ -65,32 +126,59 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idx := slices.IndexFunc(posts, func(a Page) bool {
-		return a.id == id
-	})
+	// log.Fatal("unimpmeneted page id", id)
 
-	if idx < 0 {
-		fmt.Fprint(w, "unexpected url")
-		return
+	post, ok := pages.posts[id]
+	if !ok {
+		fmt.Fprint(w, "invalid page")
 	}
 
-	post := posts[idx]
-	fmt.Println("displaying ", post.title)
+	fmt.Fprint(w, post)
+	return
 
-	fmt.Fprint(w, "<head>")
-	fmt.Fprint(w, "<title>")
-	fmt.Fprint(w, post.title)
-	fmt.Fprint(w, "</title>")
-	fmt.Fprint(w, "</head>")
+	// if slug == "/" || slug == "" {
+	// 	fmt.Fprintf(w, "<head>")
+	// 	fmt.Fprint(w, "</head>")
+	// 	fmt.Fprint(w, "<body>")
+	// 	fmt.Fprintf(w, "<ul>")
+	// 	for _, post := range legacy_posts {
+	// 		fmt.Fprint(w, "<li>")
+	// 		fmt.Fprintf(w, "<a href=\"/%s\">", strconv.Itoa(post.id))
+	// 		fmt.Fprint(w, post.title)
+	// 		fmt.Fprint(w, "</a>")
+	// 		fmt.Fprint(w, "</li>")
+	// 	}
+	// 	fmt.Fprintf(w, "</ul>")
+	// 	fmt.Fprint(w, "</body>")
+	// 	return
+	// }
 
-	fmt.Fprint(w, "<body>")
-	fmt.Fprint(w, "<h1>")
-	fmt.Fprint(w, post.title)
-	fmt.Fprint(w, "</h1>")
-	fmt.Fprint(w, "<p>")
-	fmt.Fprint(w, post.content)
-	fmt.Fprint(w, "</p>")
-	fmt.Fprint(w, "</body>")
+	// idx := slices.IndexFunc(legacy_posts, func(a Post) bool {
+	// 	return a.id == id
+	// })
+
+	// if idx < 0 {
+	// 	fmt.Fprint(w, "unexpected url")
+	// 	return
+	// }
+
+	// post := legacy_posts[idx]
+	// fmt.Println("displaying ", post.title)
+
+	// fmt.Fprint(w, "<head>")
+	// fmt.Fprint(w, "<title>")
+	// fmt.Fprint(w, post.title)
+	// fmt.Fprint(w, "</title>")
+	// fmt.Fprint(w, "</head>")
+
+	// fmt.Fprint(w, "<body>")
+	// fmt.Fprint(w, "<h1>")
+	// fmt.Fprint(w, post.title)
+	// fmt.Fprint(w, "</h1>")
+	// fmt.Fprint(w, "<p>")
+	// fmt.Fprint(w, post.content)
+	// fmt.Fprint(w, "</p>")
+	// fmt.Fprint(w, "</body>")
 }
 
 func parseItems(xml_data string) ([]map[string]interface{}, error) {
@@ -120,7 +208,7 @@ func parseItems(xml_data string) ([]map[string]interface{}, error) {
 	return results, nil
 }
 
-func parsePosts(file_path string) ([]Page, error) {
+func parsePosts(file_path string) ([]Post, error) {
 	data, err := os.ReadFile(file_path)
 	if err != nil {
 		return nil, err
@@ -131,7 +219,7 @@ func parsePosts(file_path string) ([]Page, error) {
 		return nil, err
 	}
 
-	contents := make([]Page, 0, len(results))
+	contents := make([]Post, 0, len(results))
 	for _, item := range results {
 		post_type := item["1.2:post_type"]
 		if post_type != "post" {
@@ -153,7 +241,7 @@ func parsePosts(file_path string) ([]Page, error) {
 			return contents, err
 		}
 
-		page := Page{
+		page := Post{
 			title:     title,
 			content:   content,
 			timestamp: date,
@@ -166,68 +254,54 @@ func parsePosts(file_path string) ([]Page, error) {
 	return contents, nil
 }
 
-type Page struct {
+type Post struct {
 	title     string
 	content   string
 	timestamp time.Time
 	id        int
 }
 
+var legacy_posts []Post
+
+type Pages struct {
+	index     string
+	not_found string
+	posts     map[int]string
+}
+
+func writeIndex() {
+	index := forceRead("html/index.html")
+	posts_list := "<ul>"
+	for _, post := range legacy_posts {
+		posts_list = posts_list + "<a href='/" + strconv.Itoa(post.id) + "'> <li>" + post.title + "</li></a>"
+	}
+	posts_list = posts_list + "</ul>"
+
+	index = strings.ReplaceAll(index, "{{posts_list}}", posts_list)
+	pages.index = index
+}
+
 func main() {
 
-	// posts, err := parsePosts("wp_blog_2025-10-09.xml")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// for _, page := range posts {
-	// 	fmt.Println(page.title)
-	// 	fmt.Println(page.content)
-	// }
+	// load pages into memory
 
-	// fmt.Println(contents[1].title)
-	// return
-	// result := results[1]["content:encoded"].(string)
-	// fmt.Println(result)
-	// fmt.Println("end")
-	// for _, item := range results {
+	var err error
+	legacy_posts, err = parsePosts("posts/legacy/wp_blog_2025-10-09.xml")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// 	fmt.Println(item[0])
-	// 	break
-	// }
-	// decoder := xml2map.NewDecoder(strings.NewReader(string(data)))
-	// result, err := decoder.Decode()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// result = result["rss"].(map[string]interface{})
-	// result = result["channel"].(map[string]interface{})
-	// results := result["item"].([]map[string]interface{})
+	template := forceRead("html/post_template1.html")
+	err = writeLegacyPosts(legacy_posts, ".tmp", template)
+	if err != nil {
+		log.Fatal("error", err)
+	}
 
-	// for k, v := range results {
-	// value := (map[string]string) v
-	// fmt.Printf(value)
-	// fmt.Fprint("%s", k)
-	// fmt.Println(k)
-	// fmt.Println(v)
-
-	// if i == 3 {
-	// 	break
-	// }
-	// }
-
-	// fmt.Println(result)
-	// channel := result["channel"]
-	// fmt.Printf("%s\n", channel)
-
-	// var feed string
-	// set := make(map[string]string)
-
-	// xml.Unmarshal(data, &set)
-	// fmt.Print(feed)
+	loadPages()
+	writeIndex()
 
 	http.HandleFunc("/", handler)
-
-	err := http.ListenAndServe("localhost:10000", nil)
+	err = http.ListenAndServe("localhost:10000", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
